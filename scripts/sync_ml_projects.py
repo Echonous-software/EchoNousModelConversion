@@ -76,16 +76,8 @@ def sync_repo_to_refspec(name: str, url: str, refspec: str) -> Repo:
         repo_path.mkdir(parents=True)
         repo.git('init')
         repo.git('remote', 'add', 'origin', url)
-
-    # Check if we're already at the correct refspec
-    try:
-        current = repo.git('rev-parse', 'HEAD')
-        target = repo.git('rev-parse', f'{refspec}^{{commit}}')
-        if current == target:
-            print(f'Repo {name} is already at {refspec}')
-            return repo
-    except subprocess.CalledProcessError:
-        pass  # Need to fetch
+    elif repo_at_refspec(repo, refspec):
+        return repo
 
     print(f'Fetching {refspec} in repo {name}...')
     repo.git('fetch', '--depth', '1', 'origin', refspec)
@@ -94,6 +86,11 @@ def sync_repo_to_refspec(name: str, url: str, refspec: str) -> Repo:
 
     return repo
 
+
+def repo_at_refspec(repo: Repo, refspec: str) -> bool:
+    current = repo.git('rev-parse', 'HEAD')
+    target = repo.git('rev-parse', f'{refspec}^{{commit}}')
+    return current == target
 
 def task_patch(repo: Repo, patchfile: str):
     """Apply a patch file to the repo. Patchfile is relative to SCRIPT_DIR."""
@@ -117,9 +114,11 @@ def task_copy(repo: Repo, args: dict):
 
 def write_update_log(repo: Repo):
     log_path = EXTRACT_ROOT / repo.name / 'repo.yaml'
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     metadata = {
         'url': repo.url,
         'refspec': repo.refspec,
+        'commit_id': repo.git('rev-parse', 'HEAD'),
         'sync_time': datetime.datetime.now().isoformat()
     }
     with log_path.open('wt') as f:

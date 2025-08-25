@@ -10,36 +10,50 @@ models:
     #  name, version, description
     model_loader: babajide_guidance_model
     view: A3C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version (default behavior)
     type: quality
     image_size: 128
   guidance.a3c.subview:
     model_loader: babajide_guidance_model
     view: A3C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
     type: subview
     image_size: 128
   guidance.a5c.quality:
     model_loader: babajide_guidance_model
     view: A5C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
     type: quality
     image_size: 128
   guidance.a5c.subview:
     model_loader: babajide_guidance_model
     view: A5C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
     type: subview
     image_size: 128
   guidance.sub4c.quality:
     model_loader: babajide_guidance_model
     view: SUBCOSTAL-4C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
     type: quality
     image_size: 128
   guidance.sub4c.subview:
     model_loader: babajide_guidance_model
     view: SUBCOSTAL-4C
-    version: { type: git } # Use the git commit id (of Babajide's repo) as version
     type: subview
     image_size: 128
+
+  guidance.psax_av:
+    model_loader: psax_guidance_model
+    image_size: 224
+    guidance_out_channels: 13
+    version: { type: weights }
+    weights: 2025_08_23_PSAX-AV_GG_Weights_v10.pt
+  guidance.psax_mv:
+    model_loader: psax_guidance_model
+    image_size: 224
+    guidance_out_channels: 13
+    version: { type: weights }
+    weights: 2025_06_27_PSAX-MV_GG_Weights_v03.pt
+  guidance.psax_pm:
+    model_loader: psax_guidance_model
+    image_size: 224
+    guidance_out_channels: 13
+    version: { type: weights }
+    weights: 2025_06_27_PSAX-PM_GG_Weights_v03.pt

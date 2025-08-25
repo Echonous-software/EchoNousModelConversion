@@ -23,3 +23,18 @@
             - Inference_framegrabber/weights/A5C/guidance-A5C.pt
             - Inference_framegrabber/weights/SUBCOSTAL-4C/grading-SUBCOSTAL4C.pt
             - Inference_framegrabber/weights/SUBCOSTAL-4C/guidance-SUBCOSTAL4C.pt
+
+- psax_guidance:
+    url: git@github.com:Echonous-software/PSAX-Grading-and-Guidance.git
+    refspec: main
+    steps:
+      - copy:
+          strip_directories: 2
+          files:
+            - psax-av/inference/model.py
+            - psax-av/inference/pytorch_weights/2025_08_23_PSAX-AV_GG_Weights_v10.pt
+      - copy:
+          strip_directories: 1
+          files:
+            - psax-mv/pytorch_weights/2025_06_27_PSAX-MV_GG_Weights_v03.pt
+            - psax-pm/pytorch_weights/2025_06_27_PSAX-PM_GG_Weights_v03.pt
