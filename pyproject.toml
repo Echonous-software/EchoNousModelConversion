@@ -1,0 +1,27 @@
+[project]
+name = "echonous-model-conversion"
+version = "0.0.1"
+requires-python = ">=3.12.0"
+dependencies = [
+    "PyYAML>=6.0.2",
+    "numpy>=2.3.2",
+    "torch>=2.8.0"
+]
+
+[dependency-groups]
+test = [
+
+]
+lint = [
+    "mypy>=1.17.1",
+    "ruff>=0.12.10",
+]
+dev = [
+    "echonous-model-conversion[test,lint]",
+]
+
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+disallow_untyped_defs = true

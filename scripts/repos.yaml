@@ -1,0 +1,25 @@
+# List of external repositories and specific tags/commits to check out
+- babajide_guidance:
+    url: git@github.com:Echonous-software/Guidance-and-Grading.git
+    refspec: d8de08b3ce84c2a0f2ed06cb25454151b762011d
+    steps:
+      # Patch task applies a patch to the repo in place
+      - patch: remove_view_json_import.patch
+
+      # Copy task copies files from repo into src/_vendor/{repo_name}
+      # This currently only supports files, but could easily be made to copy entire directory trees if needed
+      - copy:
+          strip_directories: 1 # Strip the leading 'Inference_framegrabber' directory
+          files:
+            - Inference_framegrabber/view_json.py
+            - Inference_framegrabber/models/mobilenet2out.py
+            - Inference_framegrabber/weights/A2C/grading-A2C.pt
+            - Inference_framegrabber/weights/A2C/guidance-A4C.pt
+            - Inference_framegrabber/weights/A3C/grading-A3C.pt
+            - Inference_framegrabber/weights/A3C/guidance-A3C.pt
+            - Inference_framegrabber/weights/A4C/grading-A4C.pt
+            - Inference_framegrabber/weights/A4C/guidance-A4C.pt
+            - Inference_framegrabber/weights/A5C/grading-A5C.pt
+            - Inference_framegrabber/weights/A5C/guidance-A5C.pt
+            - Inference_framegrabber/weights/SUBCOSTAL-4C/grading-SUBCOSTAL4C.pt
+            - Inference_framegrabber/weights/SUBCOSTAL-4C/guidance-SUBCOSTAL4C.pt

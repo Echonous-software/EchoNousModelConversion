@@ -1,0 +1,45 @@
+# Catalog of models and various parameters
+# Data driven connection of
+#  - model application (specified by name such as guidance.a3c.quality)
+#  - code to load the model class (key: model_loader)
+#  - parameters needed to
+models:
+  guidance.a3c.quality:
+    # The contents of this block are passed to the given loader function
+    # Therefore, the keys may vary by loader function, but some common keys are:
+    #  name, version, description
+    model_loader: babajide_guidance_model
+    view: A3C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: quality
+    image_size: 128
+  guidance.a3c.subview:
+    model_loader: babajide_guidance_model
+    view: A3C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: subview
+    image_size: 128
+  guidance.a5c.quality:
+    model_loader: babajide_guidance_model
+    view: A5C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: quality
+    image_size: 128
+  guidance.a5c.subview:
+    model_loader: babajide_guidance_model
+    view: A5C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: subview
+    image_size: 128
+  guidance.sub4c.quality:
+    model_loader: babajide_guidance_model
+    view: SUBCOSTAL-4C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: quality
+    image_size: 128
+  guidance.sub4c.subview:
+    model_loader: babajide_guidance_model
+    view: SUBCOSTAL-4C
+    version: { type: git } # Use the git commit id (of Babajide's repo) as version
+    type: subview
+    image_size: 128

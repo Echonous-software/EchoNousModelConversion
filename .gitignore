@@ -1,0 +1,6 @@
+src/echonous/_vendor/
+.venv/
+.idea/
+.cache/
+*.egg-info/
+__pycache__/

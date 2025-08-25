@@ -1,0 +1,14 @@
+diff --git a/Inference_framegrabber/view_json.py b/Inference_framegrabber/view_json.py
+index 4b03f24..fc63c8c 100644
+--- a/Inference_framegrabber/view_json.py
++++ b/Inference_framegrabber/view_json.py
+@@ -1,9 +1,3 @@
+-import cv2
+-from utils import Queue
+-import numpy as np
+-import os
+-import json
+-
+ keys_main = subview_keys = {0: 'A3C-CLK', 1: 'A3C', 2: 'A3C-TDN', 3: 'A3C-TUP', 4: 'A3C-CTR', 5: 'Non-window',
+                             6: 'A3C-LAT', 7: 'A3C-MED', 8: 'A3C-SMED', 9: 'A3C-SLAT', 10: 'A3C-SUP', 11: 'A3C-Mirrored'}
+ 
