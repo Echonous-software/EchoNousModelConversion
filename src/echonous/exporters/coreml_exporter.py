@@ -21,6 +21,7 @@ Notes on CPU vs GPU for tracing/inputs:
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import json
 import time
@@ -30,7 +31,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from model_class import Model, ModuleInputOutput
+from echonous.models import Model, ModuleInputOutput
 
 
 class CoreMLExportError(Exception):
@@ -147,7 +148,13 @@ class CoreMLExportAPI:
             shape = tuple(int(s) for s in io.shape)
             if any(dim <= 0 for dim in shape):
                 raise CoreMLExportError(f"Input '{io.name}' has non-positive dimension in shape: {shape}")
-            tensors.append(torch.rand(shape, dtype=torch.float32))
+            if io.type == 'image':
+                # image type must respect scale:
+                # coreml model will take 0-255 * scale as input, so apply the same logic here
+                tensor = torch.rand(shape, dtype=torch.float32) * 255.0 * io.scale
+            else:
+                tensor = torch.rand(shape, dtype=torch.float32)
+            tensors.append(tensor)
         return tensors
 
     def _preflight_custom_ops(self, module: nn.Module, example_inputs: List[torch.Tensor]) -> None:
@@ -443,7 +450,7 @@ class CoreMLExportAPI:
             tensor = torch_inputs[idx].detach().cpu()
             if io.type == 'image':
                 try:
-                    input_dict[io.name] = self._tensor_to_pil_image(tensor)
+                    input_dict[io.name] = self._tensor_to_pil_image(tensor, io.scale)
                 except Exception:
                     print("### FALLBACK ###")
                     # Fallback to numpy array (uint8 HWC) if PIL unavailable
@@ -514,9 +521,9 @@ class CoreMLExportAPI:
             "comparisons": comparisons,
         }
 
-    def _tensor_to_pil_image(self, tensor: torch.Tensor) -> Any:
+    def _tensor_to_pil_image(self, tensor: torch.Tensor, scale: float) -> Any:
         """
-        Convert a float tensor in [0,1] with shape NCHW/CHW/HWC to a PIL Image.
+        Convert a float tensor in [0,255*scale] with shape NCHW/CHW/HWC to a PIL Image.
         Grayscale -> 'L', RGB -> 'RGB'. Removes batch dim if present.
         """
         try:
@@ -549,7 +556,7 @@ class CoreMLExportAPI:
             else:
                 raise CoreMLExportError(f"Unsupported image tensor shape for PIL conversion: {tensor.shape}")
 
-        arr8 = (arr * 255.0).clip(0, 255).astype(np.uint8)
+        arr8 = (arr / scale).clip(0, 255).astype(np.uint8)
         if mode == 'L' and arr8.ndim == 3 and arr8.shape[2] == 1:
             print("### FORCING 1CH ###")
             arr8 = arr8[:, :, 0]
@@ -626,4 +633,13 @@ def convert_model_to_coreml(
         flexible_shapes=flexible_shapes,
     )
 
+def convert_all_models(output_dir: Path):
+    from echonous.models.loaders import load_all_models
+    models = load_all_models()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name, model in models.items():
+        output_path = output_dir / f"{name.replace('.', '_')}.mlpackage"
+        convert_model_to_coreml(model, str(output_path))
 
+if __name__ == '__main__':
+    convert_all_models(Path(__file__).parent.parent.parent.parent / "export" / "coreml")

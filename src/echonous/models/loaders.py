@@ -8,20 +8,7 @@ from echonous.models import Model, ModuleInputOutput
 
 
 def main():
-    catalog_path = resources.files('echonous.models') / 'catalog.yaml'
-    with catalog_path.open('r') as f:
-        catalog = yaml.safe_load(f)
-
-    models = {}
-
-    for name, params in catalog['models'].items():
-        match params['model_loader']:
-            case 'babajide_guidance_model':
-                models[name] = load_babajide_guidance_model(name, params)
-            case 'psax_guidance_model':
-                models[name] = load_psax_guidance_model(name, params)
-            case _ as loader:
-                raise KeyError(f'No model loader found named {loader}')
+    models = load_all_models()
 
     for name, model in models.items():
         print(f'Model {name}:')
@@ -35,6 +22,26 @@ def main():
         print(f'  outputs:')
         for output in model.outputs:
             print(f'    {output.name} is {output.shape} type {output.type} scale {output.scale}')
+
+
+def load_all_models() -> dict[str, Model]:
+    catalog_path = resources.files('echonous.models') / 'catalog.yaml'
+    with catalog_path.open('r') as f:
+        catalog = yaml.safe_load(f)
+
+    return {
+        name: load_model(name, params) for name, params in catalog['models'].items()
+    }
+
+
+def load_model(name: str, params: dict) -> Model:
+    match params['model_loader']:
+        case 'babajide_guidance_model':
+            return load_babajide_guidance_model(name, params)
+        case 'psax_guidance_model':
+            return load_psax_guidance_model(name, params)
+        case _ as loader:
+            raise KeyError(f'No model loader found named {loader}')
 
 
 def load_babajide_guidance_model(name: str, params: dict) -> Model:
