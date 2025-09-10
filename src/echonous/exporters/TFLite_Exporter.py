@@ -242,9 +242,14 @@ class TFLiteExportAPI:
             raise TFLiteExportError(f"NoBuCo path requires tensorflow and nobuco installed: {e}")
 
         # NoBuCo expects annotated converters via @nobuco.converter within user code
-        # Here we simply call nobuco.convert to get a TF function/Keras model
+        # Here we simply call nobuco.pytorch_to_keras to get a TF function/Keras model
         try:
-            tf_model = nobuco.convert(module, example_inputs=tuple(example_inputs) if len(example_inputs) > 1 else example_inputs[0])
+            tf_model = nobuco.pytorch_to_keras(
+            module,
+            args=example_inputs, kwargs=None,
+            inputs_channel_order=nobuco.ChannelOrder.TENSORFLOW,
+            outputs_channel_order=nobuco.ChannelOrder.TENSORFLOW
+            )
         except Exception as e:
             raise TFLiteExportError(f"NoBuCo conversion failed: {e}")
 
