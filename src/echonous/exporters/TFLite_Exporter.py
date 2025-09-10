@@ -22,6 +22,8 @@ import os
 import json
 import time
 import tempfile
+import traceback
+import sys
 
 import numpy as np
 import torch
@@ -80,6 +82,7 @@ class TFLiteExportAPI:
 
         # Attempt flatbuffer metadata embedding (best-effort)
         try:
+            print("### Attempting Flatbuffer Embed ###")
             tflite_bytes = self._embed_flatbuffer_metadata(
                 tflite_bytes=tflite_bytes,
                 model_dc=model_dc,
@@ -88,14 +91,17 @@ class TFLiteExportAPI:
                 tf_version=tf_version,
                 tflite_version=tflite_version,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"### Failed flatbuffer embedding {e}")
+            print(f"EXCEPTION TYPE: {type(e).__name__}")
+            print(f"EXCEPTION MESSAGE: {str(e)}")
+            print(f"EXCEPTION TRACEBACK: {traceback.format_exc()}")
 
         # Save model
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, 'wb') as f:
             f.write(tflite_bytes)
-
+            print("### Writing Model ###")
         # Validate on CPU
         validation, debug_info = self._validate_tflite(module, model_dc, torch_inputs, tflite_bytes, tolerance, debug)
 
@@ -249,7 +255,7 @@ class TFLiteExportAPI:
             args=example_inputs, kwargs=None,
             inputs_channel_order=nobuco.ChannelOrder.TENSORFLOW,
             outputs_channel_order=nobuco.ChannelOrder.TENSORFLOW
-            )
+            )#nobuco.convert(module, example_inputs=tuple(example_inputs) if len(example_inputs) > 1 else example_inputs[0])
         except Exception as e:
             raise TFLiteExportError(f"NoBuCo conversion failed: {e}")
 
@@ -508,90 +514,25 @@ class TFLiteExportAPI:
         tflite_version: str,
     ) -> bytes:
         """
-        Embed minimal ModelMetadata and I/O TensorMetadata into the TFLite flatbuffer.
-        Returns updated TFLite bytes. Raises TFLiteExportError if tooling is missing.
+        Embed minimal ModelMetadata and I/O TensorMetadata. This builds the metadata
+        buffer using flatbuffers directly (no tflite_support). For embedding into the
+        TFLite model, if tflite_support's MetadataPopulator is available, it will be
+        used; otherwise, this is a no-op and returns the original bytes.
         """
         try:
-            from tflite_support.metadata import metadata as _md  # type: ignore
-            from tflite_support.metadata import schema_py_generated as _mfb  # type: ignore
-            import flatbuffers  # type: ignore
-        except Exception as e:
-            raise TFLiteExportError(f"tflite-support not available for metadata embedding: {e}")
+            from fb_tflite_metadata import build_model_metadata_buffer, embed_metadata_into_tflite_bytes
+        except Exception:
+            return tflite_bytes
 
-        builder = flatbuffers.Builder(2048)
-
-        name_off = builder.CreateString(str(model_dc.name))
-        desc_off = builder.CreateString(str(model_dc.description or ""))
-        ver_off = builder.CreateString(str(model_dc.version))
-
-        # Input TensorMetadata
-        input_tm_offsets: List[int] = []
-        for io in model_dc.inputs:
-            io_name = builder.CreateString(io.name)
-            _mfb.TensorMetadataStart(builder)
-            _mfb.TensorMetadataAddName(builder, io_name)
-            tm = _mfb.TensorMetadataEnd(builder)
-            input_tm_offsets.append(tm)
-
-        # Output TensorMetadata
-        output_tm_offsets: List[int] = []
-        for oo in model_dc.outputs:
-            oo_name = builder.CreateString(oo.name)
-            _mfb.TensorMetadataStart(builder)
-            _mfb.TensorMetadataAddName(builder, oo_name)
-            tm = _mfb.TensorMetadataEnd(builder)
-            output_tm_offsets.append(tm)
-
-        # SubGraphMetadata vectors
-        _mfb.SubGraphMetadataStartInputTensorMetadataVector(builder, len(input_tm_offsets))
-        for tm in reversed(input_tm_offsets):
-            builder.PrependUOffsetTRelative(tm)
-        in_vec = builder.EndVector(len(input_tm_offsets))
-
-        _mfb.SubGraphMetadataStartOutputTensorMetadataVector(builder, len(output_tm_offsets))
-        for tm in reversed(output_tm_offsets):
-            builder.PrependUOffsetTRelative(tm)
-        out_vec = builder.EndVector(len(output_tm_offsets))
-
-        _mfb.SubGraphMetadataStart(builder)
-        _mfb.SubGraphMetadataAddName(builder, name_off)
-        _mfb.SubGraphMetadataAddInputTensorMetadata(builder, in_vec)
-        _mfb.SubGraphMetadataAddOutputTensorMetadata(builder, out_vec)
-        sgm = _mfb.SubGraphMetadataEnd(builder)
-
-        # ModelMetadata
-        _mfb.ModelMetadataStartSubgraphMetadataVector(builder, 1)
-        builder.PrependUOffsetTRelative(sgm)
-        sgv = builder.EndVector(1)
-
-        _mfb.ModelMetadataStart(builder)
-        _mfb.ModelMetadataAddName(builder, name_off)
-        _mfb.ModelMetadataAddDescription(builder, desc_off)
-        _mfb.ModelMetadataAddVersion(builder, ver_off)
-        _mfb.ModelMetadataAddSubgraphMetadata(builder, sgv)
-        mm = _mfb.ModelMetadataEnd(builder)
-        builder.Finish(mm)
-        metadata_buf = bytes(builder.Output())
-
-        # Populate metadata into the flatbuffer using a temp file
-        tmp = tempfile.NamedTemporaryFile(suffix='.tflite', delete=False)
-        tmp_name = tmp.name
-        try:
-            tmp.write(tflite_bytes)
-            tmp.flush()
-            tmp.close()
-
-            pop = _md.MetadataPopulator.with_model_file(tmp_name)
-            pop.load_metadata_buffer(metadata_buf)
-            pop.populate()
-
-            with open(tmp_name, 'rb') as f:
-                return f.read()
-        finally:
-            try:
-                os.unlink(tmp_name)
-            except Exception:
-                pass
+        metadata_buf = build_model_metadata_buffer(
+            name=str(model_dc.name),
+            description=str(model_dc.description or ""),
+            version=str(model_dc.version),
+            input_names=[io.name for io in model_dc.inputs],
+            output_names=[oo.name for oo in model_dc.outputs],
+        )
+        print(f"TFLite Buffer Length: {len(tflite_bytes)}, Metadata Buffer Length: {len(metadata_buf)}")
+        return embed_metadata_into_tflite_bytes(tflite_bytes, metadata_buf)
 
 
 def convert_model_to_tflite(
