@@ -29,9 +29,12 @@ def compile_schema(schema: str | list[str]) -> None:
 
     schema_path = SCRIPT_DIR / schema
     output_path = OUTPUT_DIR
+    print(schema_path)
+    print(output_path)
     subprocess.check_call([
-        str(flatc), '--python', '-o', str(output_path), str(schema_path)
+        str(flatc), '--python', '--gen-object-api', '-o', str(output_path), str(schema_path)
     ])
 
 build_flatbuffers_compiler()
+compile_schema('tflite.fbs')
 compile_schema('tflite_metadata.fbs')

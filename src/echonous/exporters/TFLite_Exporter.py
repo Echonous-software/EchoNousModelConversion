@@ -29,7 +29,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from model_class import Model, ModuleInputOutput
+from echonous.models import Model, ModuleInputOutput
 
 
 class TFLiteExportError(Exception):
