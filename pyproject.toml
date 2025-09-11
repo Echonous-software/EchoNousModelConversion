@@ -1,13 +1,15 @@
 [project]
 name = "echonous-model-conversion"
 version = "0.0.1"
-requires-python = ">=3.12.0"
+requires-python = ">=3.11.0"
 dependencies = [
+    "ai-edge-torch==0.6.0",
+    "ai-edge-litert==1.3.0", # 1.4.0 has a bug on Mac (https://github.com/google-ai-edge/LiteRT/issues/2836)
     "coremltools>=8.3.0",
     "flatbuffers>=25.2.10",
     "pillow>=11.3.0",
     "PyYAML>=6.0.2",
-    "numpy>=2.3.2",
+    "numpy>=2.3.3",
     "torch>=2.8.0"
 ]
 
