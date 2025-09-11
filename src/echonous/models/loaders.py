@@ -34,7 +34,13 @@ def load_all_models() -> dict[str, Model]:
     }
 
 
-def load_model(name: str, params: dict) -> Model:
+def load_model(name: str, params: dict | None = None) -> Model:
+    if params is None:
+        catalog_path = resources.files('echonous.models') / 'catalog.yaml'
+        with catalog_path.open('r') as f:
+            catalog = yaml.safe_load(f)
+        params = catalog['models'][name]
+
     match params['model_loader']:
         case 'babajide_guidance_model':
             return load_babajide_guidance_model(name, params)

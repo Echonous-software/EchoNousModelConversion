@@ -17,7 +17,6 @@ def main():
     tflite_model = ai_edge_torch.convert(model.module, inputs)
     print(tflite_model)
     tflite_model.export('guidance_psax_av.tflite')
-    .
 
 if __name__ == '__main__':
     main()
