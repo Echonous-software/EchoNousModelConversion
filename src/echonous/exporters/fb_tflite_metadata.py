@@ -121,29 +121,7 @@ def embed_metadata_into_tflite_bytes(tflite_bytes: bytes, metadata_buf: bytes) -
         import flatbuffers  # type: ignore
         print(f"Flatbuffers imported successfully, version: {getattr(flatbuffers, '__version__', 'unknown')}")
         
-        from tflite.Model import ModelT  # type: ignore
-        from tflite.Model import Model
-        # Object API classes
-        try:
-            from tflite.Model import ModelT  # type: ignore
-            print("### Successfully imported tflite.Model ###")
-        except Exception as e:
-            print(f"### No tflite.Model class: {e} ###")
-            ModelT = None  # type: ignore
-        try:
-            from tflite.Buffer import BufferT  # type: ignore
-            #from tflite.Buffer import Buffer
-            print("### Successfully imported tflite.Buffer ###")
-        except Exception as e:
-            print(f"### No tflite.BufferT class: {e} ###")
-            BufferT = None  # type: ignore
-        try:
-            from tflite.Metadata import MetadataT  # type: ignore
-            #from tflite.Metadata import Metadata
-            print("### Successfully imported tflite.Metadata ###")
-        except Exception as e:
-            print(f"### No tflite.Metadata class: {e} ###")
-            MetadataT = None  # type: ignore
+        from echonous.exporters._tflite_schema.tflite_generated import Model, ModelT, BufferT, MetadataT
     except Exception as e:
         print("### Returning tflite_bytes early (no metadata) ###")
         print(f"EXCEPTION TYPE: {type(e).__name__}")
@@ -240,12 +218,7 @@ def embed_metadata_into_tflite_bytes(tflite_bytes: bytes, metadata_buf: bytes) -
         print(f"Model instance methods: {[m for m in dir(root) if 'pack' in m.lower()]}")
         print(f"ModelT class methods: {[m for m in dir(ModelT) if not m.startswith('_')]}")
         model_obj = ModelT()
-        try:
-            model_obj._UnPack(root)
-        except Exception as e:
-            # Some gens use ModelT.InitFromObj
-            print(f"### Model InitFromObj (after {str(e)}) ###")
-            model_obj = ModelT.InitFromObj(root)  # type: ignore[attr-defined]'''
+        model_obj.InitFromObj(root)
         print("### EMBEDDING CONTINUE AFTER INIT FROM OBJ ###")
         # Ensure lists are present (object API uses lowercase field names)
         if getattr(model_obj, 'buffers', None) is None:

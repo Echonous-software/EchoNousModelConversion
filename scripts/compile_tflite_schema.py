@@ -6,7 +6,7 @@ SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 FLATBUFFERS_REPO: str = 'https://github.com/google/flatbuffers.git'
 CMAKE_GENERATOR = 'Ninja'
-OUTPUT_DIR = PROJECT_ROOT / 'src' / 'echonous' / 'exporters'
+OUTPUT_DIR = PROJECT_ROOT / 'src' / 'echonous' / 'exporters' / '_tflite_schema'
 
 
 def build_flatbuffers_compiler() -> None:
@@ -32,7 +32,12 @@ def compile_schema(schema: str | list[str]) -> None:
     print(schema_path)
     print(output_path)
     subprocess.check_call([
-        str(flatc), '--python', '--gen-object-api', '-o', str(output_path), str(schema_path)
+        str(flatc), '--python', '--gen-object-api', '--gen-onefile', '--python-decode-obj-api-strings', '-o', str(output_path), str(schema_path)
+    ])
+
+    cpp_output_path = PROJECT_ROOT / 'cpp' / '_tflite_schema'
+    subprocess.check_call([
+        str(flatc), '--cpp', '--gen-object-api', '--gen-onefile', '--cpp-std', 'c++17', '--scoped-enums', '-o', str(cpp_output_path), str(schema_path)
     ])
 
 build_flatbuffers_compiler()
