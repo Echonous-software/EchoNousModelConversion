@@ -1,7 +1,10 @@
+import json
+from dataclasses import asdict
+from typing import Literal
+
 import ai_edge_torch
 import flatbuffers
 import torch
-import tensorflow as tf
 from torch import nn
 
 from echonous.models import Model, ModuleInputOutput
@@ -23,6 +26,8 @@ class TorchModelWithNames(nn.Module):
     def forward(self, **kwargs):
         input_list = [kwargs[io.name] for io in self._inputs]
         output_list = self._module(*input_list)
+        if not isinstance(output_list, (list, tuple)):
+            output_list = [output_list]
         return {
             io.name: output for io, output in zip(self._outputs, output_list)
         }
@@ -35,7 +40,7 @@ class TorchModelWithNames(nn.Module):
 def create_tensor_metadata(io: ModuleInputOutput) -> _tflite_metadata.TensorMetadataT:
     tensor = _tflite_metadata.TensorMetadataT()
     tensor.name = io.name
-    tensor.description = f'shape: [,{', '.join(str(dim) for dim in io.shape)}]'
+    tensor.description = json.dumps(asdict(io))
     return tensor
 
 
@@ -51,11 +56,12 @@ def create_subgraph_metadata(model: Model) -> _tflite_metadata.SubGraphMetadataT
 def create_metadata(model: Model) -> _tflite_metadata.ModelMetadataT:
     metadata = _tflite_metadata.ModelMetadataT()
     metadata.name = model.name
-    metadata.description = "This is the latest description!"
+    metadata.description = model.description
     metadata.version = model.version
     metadata.author = "Echonous, Inc."
     metadata.license = "All rights reserved."
     metadata.minParserVersion = "1.0.0"
+    metadata.subgraphMetadata = [create_subgraph_metadata(model)]
 
     print(f' generating metadata, description: \"{model.description}\"')
 
@@ -68,49 +74,48 @@ def make_metadata_buffer(model: Model) -> bytes:
     builder.Finish(index, METADATA_FILE_IDENTIFIER)
     return builder.Output()
 
-def append_metadata_buffer(model_t: _tflite_schema.ModelT, model: Model):
+def get_buffer_for_metadata(model_t: _tflite_schema.ModelT) -> _tflite_schema.BufferT:
+    """
+    Get a BufferT suitable for holding model metadata (serialized bytes of a ModelMetadataT).
+
+    A ModelT has a list of metadata entries. At most one of those entries should have a name of
+    METADATA_FIELD_NAME ("TFLITE_METADATA"). This function finds and returns the buffer identified
+    by this name, or creates one if needed.
+    """
+    # Find existing metadata buffer
+    metadata_entries = [m for m in model_t.metadata if m.name == METADATA_FIELD_NAME]
+    
+    if len(metadata_entries) > 1:
+        raise ValueError("Found multiple metadata fields in model file, this is probably a bug")
+    
+    if metadata_entries:
+        return model_t.buffers[metadata_entries[0].buffer]
+    
+    # Create new metadata buffer
+    buffer_t = _tflite_schema.BufferT()
+    model_t.buffers.append(buffer_t)
+    metadata = _tflite_schema.MetadataT()
+    metadata.name = METADATA_FIELD_NAME
+    metadata.buffer = len(model_t.buffers) - 1
+    model_t.metadata.append(metadata)
+    
+    return buffer_t
+
+
+def append_metadata_buffer(model_t: _tflite_schema.ModelT, model: Model) -> None:
     metadata_bytes = make_metadata_buffer(model)
-
-    # get a buffer index for metadata
-    buffer_t = None
-    for metadata in model_t.metadata:
-        if metadata.name == METADATA_FIELD_NAME:
-            if buffer_t is not None:
-                raise ValueError(f'Found multiple metadata fields in serialized model file, unsure how to procede')
-            # Reuse existing entry, but completely overwrite buffer data
-            buffer_t = model_t.buffers[metadata.buffer]
-    if buffer_t is None:
-        # Create new buffer
-        buffer_index = len(model_t.buffers)
-        buffer_t = _tflite_schema.BufferT()
-        model_t.buffers.append(buffer_t)
-        # Add to model list of buffers and save index
-        metadata_t = _tflite_schema.MetadataT()
-        metadata_t.name = METADATA_FIELD_NAME
-        metadata_t.buffer = buffer_index
-        model_t.metadata.append(metadata_t)
-
+    buffer_t = get_buffer_for_metadata(model_t)
     buffer_t.data = metadata_bytes
 
-    # also change input/output names
-    main_subgraph = model_t.subgraphs[0]
-    input_tensors: list[_tflite_schema.TensorT] = [main_subgraph.tensors[i] for i in main_subgraph.inputs]
-    output_tensors: list[_tflite_schema.TensorT] = [main_subgraph.tensors[i] for i in main_subgraph.outputs]
-    for tensor_t, io in zip(input_tensors, model.inputs):
-        print(f' Serialized input tensor: {tensor_t.name} shape: {tensor_t.shape} vs {io.name} shape: {io.shape}')
-        #tensor_t.name = io.name
-    for tensor_t, io in zip(output_tensors, model.outputs):
-        print(f' Serialized output tensor: {tensor_t.name} shape: {tensor_t.shape} vs {io.name} shape: {io.shape}')
-        #tensor_t.name = io.name
 
-def save_model_t(model_t: _tflite_schema.ModelT, path: str):
+def save_model_t(model_t: _tflite_schema.ModelT, path: str) -> None:
     builder = flatbuffers.Builder(0)
     index = model_t.Pack(builder)
     builder.Finish(index, TFLITE_FILE_IDENTIFIER)
     with open(path, "wb") as f:
         f.write(builder.Output())
 
-def _convert_module_base(model: Model, output_path: str):
+def _convert_module_base(model: Model, output_path: str) -> None:
     # Use named parameters because tflite seems to ignore input/output order
     module_with_named_parameters = TorchModelWithNames(model)
     module_with_named_parameters.eval()
@@ -121,138 +126,98 @@ def _convert_module_base(model: Model, output_path: str):
     # export so we can load the flatbuffers schema
     tflite_model.export(output_path)
 
-def _indexof(predicate, iterable) -> int:
-    matches = [i for i, item in enumerate(iterable) if predicate(item)]
-    if len(matches) != 1:
-        raise ValueError(f'Expected exactly one item, found {len(matches)} items')
-    return matches[0]
 
-def _embed_metadata(model: Model, tflite_filepath: str):
-    # read model as ModelT
+def _load_tflite_model(tflite_filepath: str) -> _tflite_schema.ModelT:
+    """Load and deserialize a TFLite model file."""
     with open(tflite_filepath, "rb") as f:
         model_bytes = f.read()
         serialized_model = _tflite_schema.Model.GetRootAs(model_bytes, 0)
-        model_t = _tflite_schema.ModelT.InitFromObj(serialized_model)
+        return _tflite_schema.ModelT.InitFromObj(serialized_model)
 
-    # create maps of io name -> tflite_tensor_index
-    for subgraphIndex, subgraph in enumerate(model_t.subgraphs):
-        subgraph: _tflite_schema.SubGraphT
-        input_map = {} # map of input name -> tensor index (in global tensor list)
-        output_map = {} # map of output name -> tensor index (in global tensor list)
-        signatures = filter(
-            lambda signature: signature.subgraphIndex == subgraphIndex,
-            model_t.signatureDefs)
-        for signature in signatures:
-            signature: _tflite_schema.SignatureDefT
-            print(f'  signature {signature.signatureKey}')
-            for input in signature.inputs:
-                if input.name not in input_map:
-                    input_map[input.name] = input.tensorIndex
-                    if input.tensorIndex not in subgraph.inputs:
-                        raise ValueError(f'Input {input.name} maps to tensor index {input.tensorIndex}, but that index is not in subgraph inputs: {subgraph.inputs}')
-                elif input_map[input.name] != input.tensorIndex:
-                    raise ValueError(f'Input {input.name} maps to multiple tensors in different signatures')
-                # tflite_index = subgraph.inputs.index(input.tensorIndex)
-                # original_index = _indexof(lambda io: io.name == input.name, model.inputs)
-                # print(f'    input {input.name} tflite_index {tflite_index} original_index {original_index}')
-            for output in signature.outputs:
-                if output.name not in output_map:
-                    output_map[output.name] = output.tensorIndex
-                    if output.tensorIndex not in subgraph.outputs:
-                        raise ValueError(f'Output {output.name} maps to tensor index {output.tensorIndex}, but that index is not in subgraph outputs: {subgraph.inputs}')
-                elif output_map[output.name] != output.tensorIndex:
-                    raise ValueError(f'Output {output.name} maps to multiple tensors in different signatures')
+def _process_signature_io(signature_io_list: list[_tflite_schema.TensorMapT], io_map: dict[str, int], subgraph: _tflite_schema.SubGraphT, io_type: str) -> None:
+    """Process input or output tensors from signatures, building the name-to-tensor-index map."""
+    subgraph_io_list = subgraph.inputs if io_type == "input" else subgraph.outputs
+    
+    for io_item in signature_io_list:
+        if io_item.name not in io_map:
+            io_map[io_item.name] = io_item.tensorIndex
+            if io_item.tensorIndex not in subgraph_io_list:
+                raise ValueError(f'{io_type.capitalize()} {io_item.name} maps to tensor index {io_item.tensorIndex}, '
+                               f'but that index is not in subgraph {io_type}s: {subgraph_io_list}')
+        elif io_map[io_item.name] != io_item.tensorIndex:
+            raise ValueError(f'{io_type.capitalize()} {io_item.name} maps to multiple tensors in different signatures')
 
-                # tflite_index = subgraph.outputs.index(output.tensorIndex)
-                # original_index = _indexof(lambda io: io.name == output.name, model.outputs)
-                # print(f'    output {output.name} tflite_index {tflite_index} original_index {original_index}')
+def _build_signature_maps(model_t: _tflite_schema.ModelT, subgraph_index: int) -> tuple[dict[str, int], dict[str, int]]:
+    """Build maps of input/output names to tensor indices from signature definitions."""
+    input_map = {}  # map of input name -> tensor index (in global tensor list)
+    output_map = {}  # map of output name -> tensor index (in global tensor list)
+    subgraph = model_t.subgraphs[subgraph_index]
+    
+    signatures = filter(
+        lambda signature: signature.subgraphIndex == subgraph_index,
+        model_t.signatureDefs)
+    
+    for signature in signatures:
+        print(f'  signature {signature.signatureKey}')
+        _process_signature_io(signature.inputs, input_map, subgraph, "input")
+        _process_signature_io(signature.outputs, output_map, subgraph, "output")
+    
+    return input_map, output_map
 
-        # Have input_map and output_map, ready to re-order
-        # Completely overwrite inputs/outputs lists
-        print(f'original subgraph inputs: {subgraph.inputs}')
-        subgraph.inputs = [0] * len(model.inputs)
-        for idx, input in enumerate(model.inputs):
-            if input.name not in input_map:
-                raise ValueError(f'Input {input.name} not found in model signature definition(s)')
-            tensor_index = input_map[input.name]
-            subgraph.inputs[idx] = tensor_index
-            subgraph.tensors[tensor_index].name = input.name
-        print(f'modified subgraph inputs: {subgraph.inputs}')
+def _reorder_subgraph_io(subgraph: _tflite_schema.SubGraphT, model_io_list: list[ModuleInputOutput], io_map: dict[str, int], io_type: Literal["input", "output"]) -> None:
+    """Reorder subgraph inputs or outputs to match the original model order."""
+    current_list = subgraph.inputs if io_type == "input" else subgraph.outputs
+    print(f'original subgraph {io_type}s: {current_list}')
+    
+    new_io_list = [0] * len(model_io_list)
+    for idx, io_item in enumerate(model_io_list):
+        if io_item.name not in io_map:
+            raise ValueError(f'{io_type.capitalize()} {io_item.name} not found in model signature definition(s)')
+        tensor_index = io_map[io_item.name]
+        new_io_list[idx] = tensor_index
+        subgraph.tensors[tensor_index].name = io_item.name
+    
+    if io_type == "input":
+        subgraph.inputs = new_io_list
+    else:
+        subgraph.outputs = new_io_list
+    print(f'modified subgraph {io_type}s: {new_io_list}')
 
-        print(f'original subgraph outputs: {subgraph.outputs}')
-        subgraph.outputs = [0] * len(model.outputs)
-        for idx, output in enumerate(model.outputs):
-            if output.name not in output_map:
-                raise ValueError(f'Output {output.name} not found in model signature definition(s)')
-            tensor_index = output_map[output.name]
-            subgraph.outputs[idx] = tensor_index
-            subgraph.tensors[tensor_index].name = output.name
-        print(f'modified subgraph outputs: {subgraph.outputs}')
-
-
+def _finalize_model(model_t: _tflite_schema.ModelT, model: Model, tflite_filepath: str) -> None:
+    """Add description, metadata, and save the final model."""
     model_t.description = f'{model.description}\n{"-"*50}\n'
-
-
-    # create new ModelMetadataT
     append_metadata_buffer(model_t, model)
     save_model_t(model_t, tflite_filepath)
-    # append/overwrite metadata buffer in ModelT
 
-def convert_model(model: Model, output_path: str):
+def _embed_metadata(model: Model, tflite_filepath: str) -> None:
+    """Embed metadata into a TFLite model file by reordering inputs/outputs and adding metadata."""
+    # Load the TFLite model
+    model_t = _load_tflite_model(tflite_filepath)
+
+    # Process each subgraph
+    for subgraph_index, subgraph in enumerate(model_t.subgraphs):
+        # Build maps of input/output names to tensor indices from signatures
+        input_map, output_map = _build_signature_maps(model_t, subgraph_index)
+        
+        # Reorder inputs and outputs to match the original model order
+        _reorder_subgraph_io(subgraph, model.inputs, input_map, "input")
+        _reorder_subgraph_io(subgraph, model.outputs, output_map, "output")
+
+    # Finalize the model with description, metadata, and save
+    _finalize_model(model_t, model, tflite_filepath)
+
+def convert_model(model: Model, output_path: str) -> None:
     # convert to tflite model
     _convert_module_base(model, output_path)
-
     # embed metadata and re-save file
     _embed_metadata(model, output_path)
-        # read model as ModelT
-        # read metadata from ModelT buffer
-        # match input names in Model to input names in metadata
-            # produces map of { input_name: tflite_index }
-        # match output names in Model to output names in metadata
-            # produces map of { output_name: tflite_index }
-        # reorder tflite inputs/outputs to match model
 
-        # create new ModelMetadataT
-        # append/overwrite metadata buffer in ModelT
 
-    # resave file
-
-def main():
+def main() -> None:
     from echonous.models.loaders import load_model
     model = load_model('guidance.psax_av')
-
     convert_model(model, "guidance_psax_av2.tflite")
-    return
 
-
-
-    model.module.eval()
-
-    named_model = TorchModelWithNames(model)
-    named_model.eval()
-
-    inputs = sample_inputs(model)
-    print(inputs)
-    tflite_model = ai_edge_torch.convert(named_model, sample_kwargs=inputs)
-    print(tflite_model)
-    tflite_model.export('guidance_psax_av.tflite')
-    with open('guidance_psax_av.tflite', 'rb') as f:
-        model_bytes = f.read()
-
-    # Load the model
-    interpreter = tf.lite.Interpreter(model_path="guidance_psax_av.tflite")
-    interpreter.allocate_tensors()
-
-    # Get output details
-    output_details = interpreter.get_output_details()
-    for i, output in enumerate(output_details):
-        print(f"Output {i}: {output['name']}, shape: {output['shape']}")
-
-    serialized_model = _tflite_schema.Model.GetRootAs(model_bytes, 0)
-    model_t = _tflite_schema.ModelT.InitFromObj(serialized_model)
-
-    append_metadata_buffer(model_t, model)
-    save_model_t(model_t, f'guidance_psax_av_with_metadata.tflite')
 
 if __name__ == '__main__':
     main()

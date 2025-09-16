@@ -1,32 +1,47 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
 [project]
 name = "echonous-model-conversion"
 version = "0.0.1"
-requires-python = ">=3.11.0"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-    "ai-edge-torch==0.6.0",
     "ai-edge-litert==1.3.0", # 1.4.0 has a bug on Mac (https://github.com/google-ai-edge/LiteRT/issues/2836)
+    "ai-edge-torch==0.6.0",  # 0.5.0 is the latest version usable with ai-edge-litert 1.3.0
     "coremltools>=8.3.0",
     "flatbuffers>=25.2.10",
     "pillow>=11.3.0",
     "PyYAML>=6.0.2",
     "numpy>=2.3.3",
-    "torch>=2.8.0"
+    "torch==2.8.0",          # Latest version compatible with ai-edge-torch 0.5.0
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 test = [
-
+    "pytest>=8.4.2"
 ]
 lint = [
-    "mypy>=1.17.1",
-    "ruff>=0.12.10",
+    "mypy>=1.18.1",
+    "ruff>=0.13.0",
 ]
 dev = [
     "echonous-model-conversion[test,lint]",
 ]
 
+[tool.pdm.resolution]
+allow-prereleases = true
+
+[tool.pdm.resolution.overrides]
+# Force these versions despite what dependencies request
+ai-edge-litert = "1.3.0"
+tf-nightly = ">=2.20.0.dev20250619"
+tensorflow = ">=2.15.0"
+
+[tool.pdm]
+allow-direct-references = true
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 warn_return_any = true
 disallow_untyped_defs = true
